@@ -1,13 +1,12 @@
-# ============================================================
-# FAKE NEWS DETECTION - COMPLETE PIPELINE
-# Assessment for AI/ML Internship
-# ============================================================
+import matplotlib
+matplotlib.use('Agg')
 
 import pandas as pd
 import numpy as np
 import re
 import string
 import warnings
+import joblib
 warnings.filterwarnings('ignore')
 
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -16,80 +15,73 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.naive_bayes import MultinomialNB
 from sklearn.svm import LinearSVC
-from sklearn.metrics import (accuracy_score, precision_score, recall_score, 
+from sklearn.metrics import (accuracy_score, precision_score, recall_score,
                              f1_score, confusion_matrix, classification_report,
                              roc_auc_score, roc_curve)
 import matplotlib.pyplot as plt
 import seaborn as sns
-
-# ============================================================
-# STEP 1: TEXT PREPROCESSING
-# ============================================================
-
-STOPWORDS = set([
-    'i', 'me', 'my', 'myself', 'we', 'our', 'ours', 'ourselves', 'you', 'your',
-    'yourself', 'yourselves', 'he', 'him', 'his', 'himself', 'she', 'her', 'hers',
-    'it', 'its', 'itself', 'they', 'them', 'their', 'theirs', 'themselves',
-    'what', 'which', 'who', 'whom', 'this', 'that', 'these', 'those', 'am', 'is',
-    'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 'having',
-    'do', 'does', 'did', 'doing', 'a', 'an', 'the', 'and', 'but', 'if', 'or',
-    'because', 'as', 'until', 'while', 'of', 'at', 'by', 'for', 'with', 'through',
-    'during', 'before', 'after', 'above', 'below', 'up', 'down', 'in', 'out', 'on',
-    'off', 'over', 'under', 'again', 'further', 'then', 'once', 'here', 'there',
-    'when', 'where', 'why', 'how', 'all', 'any', 'both', 'each', 'few', 'more',
-    'most', 'other', 'some', 'such', 'no', 'nor', 'not', 'only', 'own', 'same',
-    'so', 'than', 'too', 'very', 's', 't', 'can', 'will', 'just', 'don', 'should',
-    'now', 'could', 'would', 'may', 'might', 'must', 'shall'
-])
-
-def preprocess_text(text):
-    """Complete text preprocessing pipeline"""
-    if pd.isna(text):
-        return ""
-    
-    # Lowercase
-    text = str(text).lower()
-    
-    # Remove URLs
-    text = re.sub(r'http\S+|www\S+|https\S+', '', text, flags=re.MULTILINE)
-    
-    # Remove HTML tags
-    text = re.sub(r'<.*?>', '', text)
-    
-    # Remove punctuation
-    text = text.translate(str.maketrans('', '', string.punctuation))
-    
-    # Remove numbers
-    text = re.sub(r'\d+', '', text)
-    
-    # Remove extra whitespace
-    text = re.sub(r'\s+', ' ', text).strip()
-    
-    # Remove stopwords and short words
-    words = text.split()
-    words = [w for w in words if w not in STOPWORDS and len(w) > 2]
-    
-    return ' '.join(words)
-
-# ============================================================
-# STEP 2: LOAD DATASET
-# ============================================================
-# Replace these paths with your actual file locations
 
 print("=" * 60)
 print("FAKE NEWS DETECTION PIPELINE")
 print("Assessment for AI/ML Internship")
 print("=" * 60)
 
-# Load the datasets
-df_fake = pd.read_csv("dataset/fake.csv")   # <-- Your fake news file
-df_true = pd.read_csv("dataset/true.csv")   # <-- Your real news file
+# ============================================================
+# STEP 1: TEXT PREPROCESSING (FIXED - source words removed)
+# ============================================================
 
-# Add labels
-df_fake['label'] = 0  # 0 = Fake
-df_true['label'] = 1  # 1 = Real
+STOPWORDS = set([
+    'i', 'me', 'my', 'myself', 'we', 'our', 'ours', 'ourselves', 'you', 'your',
+    'yourself', 'yourselves', 'he', 'him', 'his', 'himself', 'she', 'her', 'hers',
+    'herself', 'it', 'its', 'itself', 'they', 'them', 'their', 'theirs', 'themselves',
+    'what', 'which', 'who', 'whom', 'this', 'that', 'these', 'those', 'am', 'is', 'are',
+    'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 'having', 'do', 'does',
+    'did', 'doing', 'a', 'an', 'the', 'and', 'but', 'if', 'or', 'because', 'as', 'until',
+    'while', 'of', 'at', 'by', 'for', 'with', 'through', 'during', 'before', 'after',
+    'above', 'below', 'up', 'down', 'in', 'out', 'on', 'off', 'over', 'under', 'again',
+    'further', 'then', 'once', 'here', 'there', 'when', 'where', 'why', 'how', 'all',
+    'any', 'both', 'each', 'few', 'more', 'most', 'other', 'some', 'such', 'no', 'nor',
+    'not', 'only', 'own', 'same', 'so', 'than', 'too', 'very', 's', 't', 'can', 'will',
+    'just', 'don', 'should', 'now'
+])
 
-# Combine
+# SOURCE-SPECIFIC WORDS - removes Reuters/fake-news formatting bias
+SOURCE_WORDS = {
+    'reuters', 'washington', 'tuesday', 'wednesday', 'thursday', 'friday',
+    'monday', 'saturday', 'sunday', 'january', 'february', 'march', 'april',
+    'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december',
+    'video', 'via', 'image', 'images', 'watch', 'photo', 'photos', 'source',
+    'breaking', 'update', 'report', 'reports', 'said', 'says', 'say', 'share',
+    'tweet', 'twitter', 'facebook', 'youtube', 'click', 'read', 'story', 'stories',
+    'published', 'copyright', 'reserved', 'subscribe', 'newsletter', 'email',
+    'follow', 'like', 'comment', 'post', 'posted', 'latest', 'trending'
+}
+
+STOPWORDS = STOPWORDS.union(SOURCE_WORDS)
+
+def preprocess_text(text):
+    if pd.isna(text):
+        return ""
+    text = str(text).lower()
+    text = re.sub(r'http\S+|www\S+|https\S+', '', text, flags=re.MULTILINE)
+    text = re.sub(r'<.*?>', '', text)
+    text = text.translate(str.maketrans('', '', string.punctuation))
+    text = re.sub(r'\d+', '', text)
+    text = re.sub(r'\s+', ' ', text).strip()
+    words = text.split()
+    words = [w for w in words if w not in STOPWORDS and len(w) > 2]
+    return ' '.join(words)
+
+# ============================================================
+# STEP 2: LOAD DATASET
+# ============================================================
+
+df_fake = pd.read_csv("dataset/fake.csv")
+df_true = pd.read_csv("dataset/true.csv")
+
+df_fake['label'] = 0
+df_true['label'] = 1
+
 df = pd.concat([df_fake, df_true], ignore_index=True)
 df = df.sample(frac=1, random_state=42).reset_index(drop=True)
 
@@ -97,25 +89,21 @@ print(f"\nDataset loaded successfully!")
 print(f"Total samples: {len(df)}")
 print(f"Fake news: {len(df[df['label']==0])}")
 print(f"Real news: {len(df[df['label']==1])}")
-print(f"\nColumns: {list(df.columns)}")
 
 # ============================================================
-# STEP 3: EXPLORATORY DATA ANALYSIS (EDA)
+# STEP 3: EDA
 # ============================================================
 
 print("\n" + "=" * 60)
 print("STEP 3: EXPLORATORY DATA ANALYSIS")
 print("=" * 60)
 
-# Check for missing values
 print("\nMissing values:")
 print(df.isnull().sum())
 
-# Distribution of labels
 print(f"\nLabel distribution:")
 print(df['label'].value_counts())
 
-# Text length statistics
 df['text_length'] = df['text'].fillna('').apply(len)
 df['title_length'] = df['title'].fillna('').apply(len)
 
@@ -123,41 +111,32 @@ print(f"\nText length stats:")
 print(df.groupby('label')['text_length'].describe())
 
 # ============================================================
-# STEP 4: FEATURE ENGINEERING - TF-IDF
+# STEP 4: TF-IDF
 # ============================================================
 
 print("\n" + "=" * 60)
 print("STEP 4: TF-IDF VECTORIZATION")
 print("=" * 60)
 
-# Combine title and text for richer features
 df['combined_text'] = df['title'].fillna('') + " " + df['text'].fillna('')
 
-# Apply preprocessing
 print("Preprocessing text...")
 df['processed_text'] = df['combined_text'].apply(preprocess_text)
 
-# Remove empty texts after preprocessing
 df = df[df['processed_text'].str.len() > 0].reset_index(drop=True)
 
-# TF-IDF Vectorization
 tfidf = TfidfVectorizer(
-    max_features=5000,      # Top 5000 features
-    ngram_range=(1, 2),     # Unigrams + Bigrams
-    min_df=2,               # Ignore terms that appear in < 2 documents
-    max_df=0.95,            # Ignore terms that appear in > 95% of documents
-    sublinear_tf=True       # Apply sublinear tf scaling
+    max_features=5000,
+    ngram_range=(1, 2),
+    min_df=2,
+    max_df=0.95,
+    sublinear_tf=True
 )
 
 X = tfidf.fit_transform(df['processed_text'])
 y = df['label'].values
 
 print(f"TF-IDF matrix shape: {X.shape}")
-print(f"Features extracted: {X.shape[1]}")
-
-# ============================================================
-# STEP 5: TRAIN-TEST SPLIT
-# ============================================================
 
 X_train, X_test, y_train, y_test = train_test_split(
     X, y, test_size=0.2, random_state=42, stratify=y
@@ -167,14 +146,13 @@ print(f"\nTraining set: {X_train.shape[0]} samples")
 print(f"Test set: {X_test.shape[0]} samples")
 
 # ============================================================
-# STEP 6: MODEL TRAINING & COMPARISON
+# STEP 5: MODEL TRAINING
 # ============================================================
 
 print("\n" + "=" * 60)
-print("STEP 6: MODEL TRAINING & COMPARISON")
+print("STEP 5: MODEL TRAINING & COMPARISON")
 print("=" * 60)
 
-# Define models
 models = {
     'Logistic Regression': LogisticRegression(max_iter=1000, random_state=42),
     'Random Forest': RandomForestClassifier(n_estimators=200, max_depth=20, random_state=42),
@@ -182,31 +160,24 @@ models = {
     'SVM (Linear)': LinearSVC(C=1.0, random_state=42, max_iter=5000)
 }
 
-# Train and evaluate each model
 results = []
 
 for name, model in models.items():
     print(f"\nTraining {name}...")
-    
-    # Train
     model.fit(X_train, y_train)
-    
-    # Predict
     y_pred = model.predict(X_test)
-    
-    # For SVM, decision function for probabilities
+
     if hasattr(model, "predict_proba"):
         y_proba = model.predict_proba(X_test)[:, 1]
     else:
         y_proba = model.decision_function(X_test)
-    
-    # Metrics
+
     accuracy = accuracy_score(y_test, y_pred)
     precision = precision_score(y_test, y_pred)
     recall = recall_score(y_test, y_pred)
     f1 = f1_score(y_test, y_pred)
     auc = roc_auc_score(y_test, y_proba)
-    
+
     results.append({
         'Model': name,
         'Accuracy': round(accuracy, 4),
@@ -215,14 +186,13 @@ for name, model in models.items():
         'F1-Score': round(f1, 4),
         'AUC-ROC': round(auc, 4)
     })
-    
+
     print(f"  Accuracy:  {accuracy:.4f}")
     print(f"  Precision: {precision:.4f}")
     print(f"  Recall:    {recall:.4f}")
     print(f"  F1-Score:  {f1:.4f}")
     print(f"  AUC-ROC:   {auc:.4f}")
 
-# Results DataFrame
 results_df = pd.DataFrame(results)
 print("\n" + "=" * 60)
 print("MODEL COMPARISON SUMMARY")
@@ -230,14 +200,13 @@ print("=" * 60)
 print(results_df.to_string(index=False))
 
 # ============================================================
-# STEP 7: DETAILED EVALUATION OF BEST MODEL
+# STEP 6: BEST MODEL EVALUATION
 # ============================================================
 
 print("\n" + "=" * 60)
-print("STEP 7: DETAILED EVALUATION")
+print("STEP 6: DETAILED EVALUATION")
 print("=" * 60)
 
-# Select best model by F1-Score
 best_model_name = results_df.loc[results_df['F1-Score'].idxmax(), 'Model']
 best_model = models[best_model_name]
 
@@ -248,16 +217,14 @@ y_pred_best = best_model.predict(X_test)
 print("\nClassification Report:")
 print(classification_report(y_test, y_pred_best, target_names=['Fake', 'Real']))
 
-# Confusion Matrix
 cm = confusion_matrix(y_test, y_pred_best)
 print("\nConfusion Matrix:")
 print(cm)
 
 # ============================================================
-# STEP 8: VISUALIZATIONS
+# STEP 7: PLOTS
 # ============================================================
 
-# Plot 1: Model Comparison Bar Chart
 plt.figure(figsize=(12, 6))
 metrics = ['Accuracy', 'Precision', 'Recall', 'F1-Score', 'AUC-ROC']
 x = np.arange(len(results_df))
@@ -274,28 +241,25 @@ plt.legend()
 plt.ylim(0, 1.1)
 plt.tight_layout()
 plt.savefig('model_comparison.png', dpi=150)
-plt.show()
+plt.close()
 
-# Plot 2: Confusion Matrix Heatmap
 plt.figure(figsize=(6, 5))
-sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', 
-            xticklabels=['Fake', 'Real'], 
+sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
+            xticklabels=['Fake', 'Real'],
             yticklabels=['Fake', 'Real'])
 plt.title(f'Confusion Matrix - {best_model_name}')
 plt.ylabel('True Label')
 plt.xlabel('Predicted Label')
 plt.tight_layout()
 plt.savefig('confusion_matrix.png', dpi=150)
-plt.show()
+plt.close()
 
-# Plot 3: ROC Curves
 plt.figure(figsize=(8, 6))
 for name, model in models.items():
     if hasattr(model, "predict_proba"):
         y_proba = model.predict_proba(X_test)[:, 1]
     else:
         y_proba = model.decision_function(X_test)
-    
     fpr, tpr, _ = roc_curve(y_test, y_proba)
     auc = roc_auc_score(y_test, y_proba)
     plt.plot(fpr, tpr, label=f'{name} (AUC = {auc:.3f})')
@@ -307,63 +271,58 @@ plt.title('ROC Curves - All Models')
 plt.legend()
 plt.tight_layout()
 plt.savefig('roc_curves.png', dpi=150)
-plt.show()
+plt.close()
 
 # ============================================================
-# STEP 9: FEATURE IMPORTANCE (for Logistic Regression)
+# STEP 8: FEATURE IMPORTANCE
 # ============================================================
 
 print("\n" + "=" * 60)
-print("STEP 9: TOP DISCRIMINATIVE FEATURES")
+print("STEP 8: TOP DISCRIMINATIVE FEATURES")
 print("=" * 60)
 
 lr_model = models['Logistic Regression']
 feature_names = tfidf.get_feature_names_out()
 coefficients = lr_model.coef_[0]
 
-# Top features for REAL news (positive coefficients)
 top_real_idx = np.argsort(coefficients)[-15:]
 print("\nTop words indicating REAL news:")
 for idx in reversed(top_real_idx):
     print(f"  {feature_names[idx]}: {coefficients[idx]:.4f}")
 
-# Top features for FAKE news (negative coefficients)
 top_fake_idx = np.argsort(coefficients)[:15]
 print("\nTop words indicating FAKE news:")
 for idx in top_fake_idx:
     print(f"  {feature_names[idx]}: {coefficients[idx]:.4f}")
 
 # ============================================================
-# STEP 10: PREDICT 10 CUSTOM HEADLINES
+# STEP 9: CUSTOM PREDICTIONS
 # ============================================================
 
 print("\n" + "=" * 60)
-print("STEP 10: PREDICTIONS ON CUSTOM HEADLINES")
+print("STEP 9: PREDICTIONS ON CUSTOM HEADLINES")
 print("=" * 60)
 
 custom_headlines = [
-    "Senate passes bipartisan infrastructure bill with overwhelming support",
-    "SHOCKING: Secret documents prove government hiding alien existence",
-    "Federal Reserve announces quarter-point interest rate increase",
-    "BREAKING: Celebrity arrested in massive international fraud scheme",
-    "NASA rover discovers evidence of ancient microbial life on Mars",
-    "EXPOSED: Vaccines contain microscopic tracking chips says whistleblower",
-    "World Health Organization declares end of global pandemic",
-    "URGENT: Drinking bleach cures all diseases instantly",
-    "European Union imposes new economic sanctions on Russia",
-    "BOMBSHELL: Earth is flat and NASA has been lying for decades"
+    "Donald Trump signs executive order on immigration policy",
+    "Hillary Clinton emails prove conspiracy to rig election",
+    "Republican senators propose new tax reform bill",
+    "Obama birth certificate proven fake by forensic experts",
+    "White House spokesman confirms new foreign policy strategy",
+    "Secret documents reveal GOP plot to steal election",
+    "Democratic lawmakers introduce healthcare reform legislation",
+    "Breaking: Government hiding truth about economic collapse",
+    "Minister announces new trade agreement with European Union",
+    "Shocking: Political elites running secret child trafficking ring"
 ]
 
-# Preprocess and predict
 processed_headlines = [preprocess_text(h) for h in custom_headlines]
 headline_vectors = tfidf.transform(processed_headlines)
 predictions = best_model.predict(headline_vectors)
 
-# For probability scores
 if hasattr(best_model, "predict_proba"):
     probabilities = best_model.predict_proba(headline_vectors)
 else:
-    # Use decision function and convert to probability-like scores
     decisions = best_model.decision_function(headline_vectors)
     probabilities = np.column_stack([
         1 / (1 + np.exp(decisions)),
@@ -380,10 +339,8 @@ for i, headline in enumerate(custom_headlines):
     print("-" * 80)
 
 # ============================================================
-# STEP 11: SAVE MODEL
+# STEP 10: SAVE MODEL
 # ============================================================
-
-import joblib
 
 joblib.dump(best_model, 'fake_news_model.pkl')
 joblib.dump(tfidf, 'tfidf_vectorizer.pkl')
@@ -392,8 +349,8 @@ print("\n" + "=" * 60)
 print("PIPELINE COMPLETE")
 print("=" * 60)
 print("Saved files:")
-print("  - fake_news_model.pkl (trained model)")
-print("  - tfidf_vectorizer.pkl (vectorizer)")
+print("  - fake_news_model.pkl")
+print("  - tfidf_vectorizer.pkl")
 print("  - model_comparison.png")
 print("  - confusion_matrix.png")
 print("  - roc_curves.png")
